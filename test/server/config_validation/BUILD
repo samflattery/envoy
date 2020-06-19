@@ -114,12 +114,29 @@ envoy_proto_library(
 )
 
 envoy_cc_test_library(
+    name = "xds_verifier_lib",
+    srcs = ["xds_verifier.cc"],
+    hdrs = ["xds_verifier.h"],
+    deps = [
+        "@envoy_api//envoy/admin/v3:pkg_cc_proto",
+        "@envoy_api//envoy/api/v2:pkg_cc_proto",
+        "@envoy_api//envoy/config/bootstrap/v3:pkg_cc_proto",
+        "@envoy_api//envoy/config/core/v3:pkg_cc_proto",
+        "@envoy_api//envoy/config/endpoint/v3:pkg_cc_proto",
+        "@envoy_api//envoy/config/filter/network/http_connection_manager/v2:pkg_cc_proto",
+        "@envoy_api//envoy/config/listener/v3:pkg_cc_proto",
+        "@envoy_api//envoy/extensions/transport_sockets/tls/v3:pkg_cc_proto",
+    ],
+)
+
+envoy_cc_test_library(
     name = "xds_fuzz_lib",
     srcs = ["xds_fuzz.cc"],
     hdrs = ["xds_fuzz.h"],
     deps = [
         "//test/integration:http_integration_lib",
         ":xds_fuzz_proto_cc_proto",
+        ":xds_verifier_lib",
         "//test/integration:integration_lib",
     ] + select({
         "//bazel:windows_x86_64": envoy_all_extensions(WINDOWS_SKIP_TARGETS),

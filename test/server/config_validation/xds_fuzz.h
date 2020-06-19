@@ -13,6 +13,7 @@
 #include "test/config/utility.h"
 #include "test/integration/http_integration.h"
 #include "test/server/config_validation/xds_fuzz.pb.h"
+#include "test/server/config_validation/xds_verifier.h"
 
 #include "absl/types/optional.h"
 
@@ -51,7 +52,7 @@ public:
 
 private:
   void parseConfig(const test::server::config_validation::XdsTestCase& input);
-  void initializePools();
+  XdsVerifier verifier;
 
   absl::optional<std::string> removeListener(uint32_t listener_num);
   absl::optional<std::string> removeRoute(uint32_t route_num);

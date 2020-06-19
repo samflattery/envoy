@@ -196,12 +196,19 @@ void XdsFuzzTest::replay() {
   for (const auto& action : actions_) {
     switch (action.action_selector_case()) {
     case test::server::config_validation::Action::kAddListener: {
-      removeListener(action.add_listener().listener_num());
+      auto removed = removeListener(action.add_listener().listener_num());
       auto listener =
           buildListener(action.add_listener().listener_num(), action.add_listener().route_num());
       listeners_.push_back(listener);
 
       updateListener(listeners_, {listener}, {});
+
+      if (removed) {
+        verifier.listenerAdded(listener, true);
+      } else {
+        verifier.listenerAdded(listener, false);
+      }
+
       // TODO(samflattery): compareDiscoveryResponse to check ACK/NACK?
       break;
     }
@@ -210,6 +217,7 @@ void XdsFuzzTest::replay() {
 
       if (removed) {
         updateListener(listeners_, {}, {*removed});
+        verifier.listenerRemoved(*removed);
       } else {
         updateListener(listeners_, {}, {});
       }
@@ -217,10 +225,17 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kAddRoute: {
-      removeRoute(action.add_route().route_num());
+      auto removed = removeRoute(action.add_route().route_num());
       auto route = buildRouteConfig(action.add_route().route_num());
       routes_.push_back(route);
       updateRoute(routes_, {route}, {});
+      if (removed) {
+        verifier.routeAdded(route, true);
+      } else {
+        verifier.routeAdded(route, false);
+
+      }
+
       break;
     }
     case test::server::config_validation::Action::kRemoveRoute: {
@@ -232,6 +247,7 @@ void XdsFuzzTest::replay() {
       auto removed = removeRoute(action.remove_route().route_num());
       if (removed) {
         updateRoute(routes_, {}, {*removed});
+        verifier.routeRemoved(*removed);
       } else {
         updateRoute(routes_, {}, {});
       }
