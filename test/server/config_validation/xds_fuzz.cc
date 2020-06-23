@@ -256,11 +256,99 @@ void XdsFuzzTest::replay() {
     default:
       break;
     }
+
     // TODO(samflattery): makeSingleRequest here?
     version_++;
   }
 
+  verifyState();
   close();
 }
 
+void XdsFuzzTest::drainListener(const std::string& name) {
+  // advance time halfway through
+  EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining());
+  timeSystem().advanceTimeWait(std::chrono::milliseconds(300));
+  EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining());
+  timeSystem().advanceTimeWait(std::chrono::milliseconds(301));
+  EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining() - 1);
+  verifier.drainedListener(name);
+
+
+  // check that it's still draining in config dump
+  // advance time to the end and check that it's finished draining
+  // maybe using stats instead of config dump? less memory usage
+  // call verifier.drained(listener) to remove it from vector in verifier
+  return;
+}
+
+void XdsFuzzTest::verifyListeners() {
+  const auto& listeners = verifier.listeners();
+  envoy::admin::v3::ListenersConfigDump listener_dump = getListenersConfigDump();
+  for (auto& listener_rep : listeners) {
+    for (auto& dump_listener : listener_dump.dynamic_listeners()) {
+      if (dump_listener.name() == listener_rep.listener.name()) {
+        switch (listener_rep.state) {
+          case XdsVerifier::DRAINING:
+            if (dump_listener.has_draining_state()) {
+              drainListener(listener_rep.listener.name());
+              return;
+            }
+              break;
+            /* if (!dump_listener.draining_state().isEmpty()) { */
+            /*   break; */
+            /* } */
+            /* if (!dump_listener.hasField("draining_state")) { */
+            /*   drainListener(listener_rep.listener.name()); */
+            /*   return; */
+            /* } */
+            break;
+          case XdsVerifier::WARMING:
+            if (dump_listener.has_warming_state()) {
+              return;
+            }
+            break;
+          case XdsVerifier::ACTIVE:
+            if (dump_listener.has_active_state()) {
+              return;
+            }
+            break;
+          default:
+            NOT_REACHED_GCOVR_EXCL_LINE;
+        }
+      }
+    }
+    throw EnvoyException(fmt::format("Expected to find listener {} in config dump", listener_rep.listener.name()));
+  }
+}
+
+void XdsFuzzTest::verifyState() {
+  /* const auto& routes = verifier.routes(); */
+  verifyListeners();
+  /* verifyRoutes(); */
+
+  /* EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_warming")->value(), verifier.numWarming()); */
+  /* EXPECT_EQUAL(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining()); */
+  /* EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_active")->value(), verifier.numActive()); */
+}
+
+envoy::admin::v3::ClustersConfigDump XdsFuzzTest::getClustersConfigDump() {
+  auto message_ptr =
+      test_server_->server().admin().getConfigTracker().getCallbacksMap().at("clusters")();
+  return dynamic_cast<const envoy::admin::v3::ClustersConfigDump&>(*message_ptr);
+}
+
+envoy::admin::v3::ListenersConfigDump XdsFuzzTest::getListenersConfigDump() {
+  auto message_ptr =
+      test_server_->server().admin().getConfigTracker().getCallbacksMap().at("listeners")();
+  return dynamic_cast<const envoy::admin::v3::ListenersConfigDump&>(*message_ptr);
+}
+
+envoy::admin::v3::RoutesConfigDump XdsFuzzTest::getRoutesConfigDump() {
+  auto message_ptr =
+      test_server_->server().admin().getConfigTracker().getCallbacksMap().at("routes")();
+  return dynamic_cast<const envoy::admin::v3::RoutesConfigDump&>(*message_ptr);
+}
+
 } // namespace Envoy
+

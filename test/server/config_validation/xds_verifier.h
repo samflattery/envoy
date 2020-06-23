@@ -5,6 +5,9 @@
 #include "envoy/config/route/v3/route.pb.h"
 #include "envoy/config/filter/network/http_connection_manager/v2/http_connection_manager.pb.h"
 
+#include "envoy/common/exception.h"
+
+namespace Envoy {
 
 class XdsVerifier {
 public:
@@ -13,9 +16,8 @@ public:
   void listenerRemoved(std::string& name);
   void routeAdded(envoy::config::route::v3::RouteConfiguration route, bool updated=false);
   void routeRemoved(std::string& name);
+  void drainedListener(const std::string& name);
 
-private:
-  std::string getRoute(envoy::config::listener::v3::Listener);
   enum ListenerState {
     WARMING,
     ACTIVE,
@@ -25,9 +27,21 @@ private:
     envoy::config::listener::v3::Listener listener;
     ListenerState state;
   };
+
+  const std::vector<ListenerRep> &listeners() const { return listeners_; }
+  const std::vector<envoy::config::route::v3::RouteConfiguration> &routes() const { return routes_; }
+
+  uint32_t numWarming() { return num_warming; }
+  uint32_t numActive() { return num_active; }
+  uint32_t numDraining() { return num_draining; }
+
+private:
+  std::string getRoute(envoy::config::listener::v3::Listener);
   std::vector<ListenerRep> listeners_;
   std::vector<envoy::config::route::v3::RouteConfiguration> routes_;
-  /* uint32_t num_warming; */
-  /* uint32_t num_active; */
-  /* uint32_t num_draining; */
+  uint32_t num_warming;
+  uint32_t num_active;
+  uint32_t num_draining;
 };
+
+} // namespace Envoy

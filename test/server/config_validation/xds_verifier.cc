@@ -1,5 +1,10 @@
 #include "test/server/config_validation/xds_verifier.h"
 
+namespace Envoy {
+
+/**
+ * get the route referenced by a listener
+ */
 std::string XdsVerifier::getRoute(envoy::config::listener::v3::Listener listener) {
   envoy::config::listener::v3::Filter filter0 = listener.filter_chains()[0].filters()[0];
   envoy::config::filter::network::http_connection_manager::v2::HttpConnectionManager conn_man;
@@ -12,23 +17,26 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
     // a listener in listeners_ needs to drain
     for (auto& listener_rep : listeners_) {
       if (listener_rep.listener.name() == listener.name()) {
+        num_active--;
+        num_draining++;
         listener_rep.state = ListenerState::DRAINING;
         // drain it with simulated time?
       }
     }
   }
 
-  bool found = false;
+  bool found_route = false;
   for (auto& route : routes_) {
     if (getRoute(listener) == route.name()) {
-      // will need to change if there are multiple routes that the listener can
-      // reference
+      // will need to change if there are multiple routes that the listener can reference
       listeners_.push_back({listener, ACTIVE});
-      found = true;
+      num_active++;
+      found_route = true;
     }
   }
 
-  if (!found) {
+  if (!found_route) {
+    num_warming++;
     listeners_.push_back({listener, ListenerState::WARMING});
   }
 
@@ -38,6 +46,8 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
 void XdsVerifier::listenerRemoved(std::string& name) {
   for (auto& listener_rep : listeners_) {
     if (listener_rep.listener.name() == name) {
+      num_active--;
+      num_draining++;
       listener_rep.state = ListenerState::DRAINING;
       // wait for it to drain?
     }
@@ -56,6 +66,8 @@ void XdsVerifier::routeAdded(envoy::config::route::v3::RouteConfiguration route,
   for (auto& listener_rep : listeners_) {
     if (getRoute(listener_rep.listener) == route.name()) {
       // it should successfully warm now
+      num_warming--;
+      num_active++;
       listener_rep.state = ListenerState::ACTIVE;
     }
   }
@@ -63,11 +75,22 @@ void XdsVerifier::routeAdded(envoy::config::route::v3::RouteConfiguration route,
 }
 
 void XdsVerifier::routeRemoved(std::string& name) {
-  // it might not be possible to remove a route when it references listeners,
-  // check this again
+  // it might not be possible to remove a route when it references listeners, check this again
   for (auto& route : routes_) {
     if (route.name() == name) {
       ;
     }
   }
 }
+
+void XdsVerifier::drainedListener(const std::string& name) {
+  for (auto it = listeners_.begin(); it != listeners_.end(); ++it) {
+    if (it->listener.name() == name && it->state == DRAINING) {
+      listeners_.erase(it);
+      return;
+    }
+  }
+  throw EnvoyException("not draining");
+}
+
+} // namespace Envoy

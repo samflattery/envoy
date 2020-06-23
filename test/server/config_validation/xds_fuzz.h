@@ -52,6 +52,13 @@ public:
 
 private:
   void parseConfig(const test::server::config_validation::XdsTestCase& input);
+  void verifyState();
+  void verifyListeners();
+  void drainListener(const std::string& name);
+  envoy::admin::v3::ClustersConfigDump getClustersConfigDump();
+  envoy::admin::v3::ListenersConfigDump getListenersConfigDump();
+  envoy::admin::v3::RoutesConfigDump getRoutesConfigDump();
+
   XdsVerifier verifier;
 
   absl::optional<std::string> removeListener(uint32_t listener_num);
