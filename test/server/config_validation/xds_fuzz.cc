@@ -174,6 +174,14 @@ absl::optional<std::string> XdsFuzzTest::removeRoute(uint32_t route_num) {
   return {};
 }
 
+AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url, const std::string& expected_version) {
+  API_NO_BOOST(envoy::api::v2::DiscoveryRequest) discovery_request;
+  do {
+    VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
+  } while (expected_type_url != discovery_request.type_url() && expected_version != discovery_request.version_info());
+  return AssertionSuccess();
+}
+
 /**
  * run the sequence of actions defined in the fuzzed protobuf
  */
@@ -204,6 +212,9 @@ void XdsFuzzTest::replay() {
 
       updateListener(listeners_, {listener}, {});
 
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
+      /* EXPECT_TRUE(compareDiscoveryRequest(Config::TypeUrl::get().Listener, std::to_string(version_), {}, {}, {})); */
+
       if (removed) {
         verifier.listenerAdded(listener, true);
       } else {
@@ -223,6 +234,7 @@ void XdsFuzzTest::replay() {
       } else {
         updateListener(listeners_, {}, {});
       }
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
 
       break;
     }
@@ -232,6 +244,8 @@ void XdsFuzzTest::replay() {
       auto route = buildRouteConfig(action.add_route().route_num());
       routes_.push_back(route);
       updateRoute(routes_, {route}, {});
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
+      /* EXPECT_TRUE(compareDiscoveryRequest(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_), {}, {}, {})); */
       if (removed) {
         verifier.routeAdded(route, true);
       } else {
@@ -284,22 +298,28 @@ void XdsFuzzTest::verifyListeners() {
   const auto& listeners = verifier.listeners();
   envoy::admin::v3::ListenersConfigDump listener_dump = getListenersConfigDump();
   for (auto& listener_rep : listeners) {
+    ENVOY_LOG_MISC(info, "Verifying {}", listener_rep.listener.name());
     for (auto& dump_listener : listener_dump.dynamic_listeners()) {
       if (dump_listener.name() == listener_rep.listener.name()) {
+        ENVOY_LOG_MISC(info, "Found matching listener name");
+        ENVOY_LOG_MISC(info, dump_listener.DebugString());
         switch (listener_rep.state) {
           case XdsVerifier::DRAINING:
             if (dump_listener.has_draining_state()) {
+              ENVOY_LOG_MISC(info, "Draining {}", listener_rep.listener.name());
               drainListener(listener_rep.listener.name());
               return;
             }
             break;
           case XdsVerifier::WARMING:
             if (dump_listener.has_warming_state()) {
+              ENVOY_LOG_MISC(info, "Warming {}", listener_rep.listener.name());
               return;
             }
             break;
           case XdsVerifier::ACTIVE:
             if (dump_listener.has_active_state()) {
+              ENVOY_LOG_MISC(info, "Active {}", listener_rep.listener.name());
               return;
             }
             break;

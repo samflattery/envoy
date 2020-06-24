@@ -55,6 +55,8 @@ private:
   void verifyState();
   void verifyListeners();
   void drainListener(const std::string& name);
+  AssertionResult waitForAck(const std::string& expected_type_url, const std::string& expected_version);
+
   envoy::admin::v3::ClustersConfigDump getClustersConfigDump();
   envoy::admin::v3::ListenersConfigDump getListenersConfigDump();
   envoy::admin::v3::RoutesConfigDump getRoutesConfigDump();
@@ -73,7 +75,6 @@ private:
 
   Network::Address::IpVersion ip_version_;
   Grpc::ClientType client_type_;
-  Grpc::SotwOrDelta sotw_or_delta_;
 
   uint64_t version_;
   envoy::config::core::v3::ApiVersion api_version_;
