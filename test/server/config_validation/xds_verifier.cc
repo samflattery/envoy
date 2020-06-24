@@ -1,4 +1,5 @@
 #include "test/server/config_validation/xds_verifier.h"
+#include "common/common/logger.h"
 
 namespace Envoy {
 
@@ -15,6 +16,7 @@ std::string XdsVerifier::getRoute(envoy::config::listener::v3::Listener listener
 void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, bool updated) {
   if (updated) {
     // a listener in listeners_ needs to drain
+    ENVOY_LOG_MISC(info, "Updating {}", listener.name());
     for (auto& listener_rep : listeners_) {
       if (listener_rep.listener.name() == listener.name()) {
         num_active--;
@@ -28,6 +30,7 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
   bool found_route = false;
   for (auto& route : routes_) {
     if (getRoute(listener) == route.name()) {
+      ENVOY_LOG_MISC(info, "Adding {} to listeners_ as ACTIVE", listener.name());
       // will need to change if there are multiple routes that the listener can reference
       listeners_.push_back({listener, ACTIVE});
       num_active++;
@@ -37,6 +40,7 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
 
   if (!found_route) {
     num_warming++;
+    ENVOY_LOG_MISC(info, "Adding {} to listeners_ as WARMING", listener.name());
     listeners_.push_back({listener, ListenerState::WARMING});
   }
 
@@ -46,6 +50,7 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
 void XdsVerifier::listenerRemoved(std::string& name) {
   for (auto& listener_rep : listeners_) {
     if (listener_rep.listener.name() == name) {
+      ENVOY_LOG_MISC(info, "Changing {} to DRAINING", name);
       num_active--;
       num_draining++;
       listener_rep.state = ListenerState::DRAINING;
@@ -65,6 +70,7 @@ void XdsVerifier::routeAdded(envoy::config::route::v3::RouteConfiguration route,
 
   for (auto& listener_rep : listeners_) {
     if (getRoute(listener_rep.listener) == route.name()) {
+      ENVOY_LOG_MISC(info, "Moving {} to ACTIVE state", listener_rep.listener.name());
       // it should successfully warm now
       num_warming--;
       num_active++;
@@ -86,6 +92,7 @@ void XdsVerifier::routeRemoved(std::string& name) {
 void XdsVerifier::drainedListener(const std::string& name) {
   for (auto it = listeners_.begin(); it != listeners_.end(); ++it) {
     if (it->listener.name() == name && it->state == DRAINING) {
+      ENVOY_LOG_MISC(info, "Drained and removed {}", name);
       listeners_.erase(it);
       return;
     }

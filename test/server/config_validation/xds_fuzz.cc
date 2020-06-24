@@ -41,7 +41,7 @@ void XdsFuzzTest::updateListener(
     const std::vector<envoy::config::listener::v3::Listener>& listeners,
     const std::vector<envoy::config::listener::v3::Listener>& added_or_updated,
     const std::vector<std::string>& removed) {
-  ENVOY_LOG_MISC(debug, "Sending Listener DiscoveryResponse version {}", version_);
+  ENVOY_LOG_MISC(info, "Sending Listener DiscoveryResponse version {}", version_);
   sendDiscoveryResponse<envoy::config::listener::v3::Listener>(Config::TypeUrl::get().Listener,
                                                                listeners, added_or_updated, removed,
                                                                std::to_string(version_));
@@ -51,7 +51,7 @@ void XdsFuzzTest::updateRoute(
     const std::vector<envoy::config::route::v3::RouteConfiguration> routes,
     const std::vector<envoy::config::route::v3::RouteConfiguration>& added_or_updated,
     const std::vector<std::string>& removed) {
-  ENVOY_LOG_MISC(debug, "Sending Route DiscoveryResponse version {}", version_);
+  ENVOY_LOG_MISC(info, "Sending Route DiscoveryResponse version {}", version_);
   sendDiscoveryResponse<envoy::config::route::v3::RouteConfiguration>(
       Config::TypeUrl::get().RouteConfiguration, routes, added_or_updated, removed,
       std::to_string(version_));
@@ -196,6 +196,7 @@ void XdsFuzzTest::replay() {
   for (const auto& action : actions_) {
     switch (action.action_selector_case()) {
     case test::server::config_validation::Action::kAddListener: {
+      ENVOY_LOG_MISC(info, "Adding listener_{} with reference to route_{}", action.add_listener().listener_num(), action.add_listener().route_num());
       auto removed = removeListener(action.add_listener().listener_num());
       auto listener =
           buildListener(action.add_listener().listener_num(), action.add_listener().route_num());
@@ -213,7 +214,8 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kRemoveListener: {
-      auto removed = removeListener(action.add_listener().listener_num());
+      ENVOY_LOG_MISC(info, "Removing listener_{}", action.remove_listener().listener_num());
+      auto removed = removeListener(action.remove_listener().listener_num());
 
       if (removed) {
         updateListener(listeners_, {}, {*removed});
@@ -225,6 +227,7 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kAddRoute: {
+      ENVOY_LOG_MISC(info, "Adding route_{}", action.add_route().route_num());
       auto removed = removeRoute(action.add_route().route_num());
       auto route = buildRouteConfig(action.add_route().route_num());
       routes_.push_back(route);
@@ -239,6 +242,7 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kRemoveRoute: {
+      ENVOY_LOG_MISC(info, "Removing route_{}", action.remove_route().route_num());
       if (sotw_or_delta_ == Grpc::SotwOrDelta::Sotw) {
         // routes cannot be removed in SOTW updates
         break;
@@ -266,23 +270,17 @@ void XdsFuzzTest::replay() {
 }
 
 void XdsFuzzTest::drainListener(const std::string& name) {
-  // advance time halfway through
+  // ensure that the listener drains correctly by checking that it is still draining halfway through
+  ENVOY_LOG_MISC(info, "Draining {}", name);
   EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining());
   timeSystem().advanceTimeWait(std::chrono::milliseconds(300));
   EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining());
   timeSystem().advanceTimeWait(std::chrono::milliseconds(301));
   EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining() - 1);
-  verifier.drainedListener(name);
-
-
-  // check that it's still draining in config dump
-  // advance time to the end and check that it's finished draining
-  // maybe using stats instead of config dump? less memory usage
-  // call verifier.drained(listener) to remove it from vector in verifier
-  return;
 }
 
 void XdsFuzzTest::verifyListeners() {
+  ENVOY_LOG_MISC(info, "Verifying listeners");
   const auto& listeners = verifier.listeners();
   envoy::admin::v3::ListenersConfigDump listener_dump = getListenersConfigDump();
   for (auto& listener_rep : listeners) {
@@ -294,14 +292,6 @@ void XdsFuzzTest::verifyListeners() {
               drainListener(listener_rep.listener.name());
               return;
             }
-              break;
-            /* if (!dump_listener.draining_state().isEmpty()) { */
-            /*   break; */
-            /* } */
-            /* if (!dump_listener.hasField("draining_state")) { */
-            /*   drainListener(listener_rep.listener.name()); */
-            /*   return; */
-            /* } */
             break;
           case XdsVerifier::WARMING:
             if (dump_listener.has_warming_state()) {
@@ -323,12 +313,10 @@ void XdsFuzzTest::verifyListeners() {
 }
 
 void XdsFuzzTest::verifyState() {
-  /* const auto& routes = verifier.routes(); */
   verifyListeners();
-  /* verifyRoutes(); */
 
   /* EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_warming")->value(), verifier.numWarming()); */
-  /* EXPECT_EQUAL(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining()); */
+  /* EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(), verifier.numDraining()); */
   /* EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_active")->value(), verifier.numActive()); */
 }
 
