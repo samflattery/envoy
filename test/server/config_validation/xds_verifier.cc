@@ -54,7 +54,6 @@ void XdsVerifier::listenerRemoved(std::string& name) {
       num_active_--;
       num_draining_++;
       listener_rep.state = ListenerState::DRAINING;
-      // wait for it to drain?
     }
   }
 }

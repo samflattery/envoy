@@ -1,5 +1,6 @@
 #include "test/server/config_validation/xds_fuzz.h"
 
+#include "common/common/logger.h"
 #include "envoy/config/bootstrap/v3/bootstrap.pb.h"
 #include "envoy/config/cluster/v3/cluster.pb.h"
 #include "envoy/config/endpoint/v3/endpoint.pb.h"
@@ -181,6 +182,7 @@ AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url,
     VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
   } while (expected_type_url != discovery_request.type_url() &&
            expected_version != discovery_request.version_info());
+  ENVOY_LOG_MISC(info, "Successfully received ACK for {} version {}", expected_type_url, expected_version);
   return AssertionSuccess();
 }
 
@@ -253,7 +255,7 @@ void XdsFuzzTest::replay() {
       } else {
         updateListener(listeners_, {}, {});
       }
-      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
       ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
                      test_server_->counter("listener_manager.listener_added")->value(),
                      test_server_->counter("listener_manager.listener_modified")->value(),
@@ -329,8 +331,9 @@ void XdsFuzzTest::verifyListeners() {
     ENVOY_LOG_MISC(info, "Verifying {} with state {}", listener_rep.listener.name(), listener_rep.state);
     bool found = false;
     for (auto& dump_listener : listener_dump.dynamic_listeners()) {
-      ENVOY_LOG_MISC(info, "Found a matching listener in config dump");
       if (dump_listener.name() == listener_rep.listener.name()) {
+        ENVOY_LOG_MISC(info, "Found a matching listener in config dump");
+        ENVOY_LOG_MISC(info, "drain: {}, warm {}, active {}", dump_listener.has_draining_state(), dump_listener.has_warming_state(), dump_listener.has_active_state());
         switch (listener_rep.state) {
         case XdsVerifier::DRAINING:
           if (dump_listener.has_draining_state()) {
@@ -357,6 +360,7 @@ void XdsFuzzTest::verifyListeners() {
       }
     }
     if (!found)
+      ENVOY_LOG_MISC(info, "Expected to find listener {} in config dump");
       throw EnvoyException(
           fmt::format("Expected to find listener {} in config dump", listener_rep.listener.name()));
   }
