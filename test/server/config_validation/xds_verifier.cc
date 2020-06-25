@@ -1,7 +1,10 @@
 #include "test/server/config_validation/xds_verifier.h"
+
 #include "common/common/logger.h"
 
 namespace Envoy {
+
+XdsVerifier::XdsVerifier() : num_warming_(0), num_active_(0), num_draining_(0) {}
 
 /**
  * get the route referenced by a listener
@@ -16,13 +19,12 @@ std::string XdsVerifier::getRoute(envoy::config::listener::v3::Listener listener
 void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, bool updated) {
   if (updated) {
     // a listener in listeners_ needs to drain
-    ENVOY_LOG_MISC(info, "Updating {}", listener.name());
     for (auto& listener_rep : listeners_) {
       if (listener_rep.listener.name() == listener.name()) {
-        num_active--;
-        num_draining++;
+        ENVOY_LOG_MISC(info, "Moving {} to DRAINING state", listener.name());
+        num_active_--;
+        num_draining_++;
         listener_rep.state = ListenerState::DRAINING;
-        // drain it with simulated time?
       }
     }
   }
@@ -33,34 +35,28 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
       ENVOY_LOG_MISC(info, "Adding {} to listeners_ as ACTIVE", listener.name());
       // will need to change if there are multiple routes that the listener can reference
       listeners_.push_back({listener, ACTIVE});
-      num_active++;
+      num_active_++;
       found_route = true;
     }
   }
 
   if (!found_route) {
-    num_warming++;
+    num_warming_++;
     ENVOY_LOG_MISC(info, "Adding {} to listeners_ as WARMING", listener.name());
     listeners_.push_back({listener, ListenerState::WARMING});
   }
-
-  // check some stats here
 }
 
 void XdsVerifier::listenerRemoved(std::string& name) {
   for (auto& listener_rep : listeners_) {
     if (listener_rep.listener.name() == name) {
       ENVOY_LOG_MISC(info, "Changing {} to DRAINING", name);
-      num_active--;
-      num_draining++;
+      num_active_--;
+      num_draining_++;
       listener_rep.state = ListenerState::DRAINING;
       // wait for it to drain?
     }
   }
-  // check some stats here
-  // TestUtility::findCounter(statStore(), name);
-  // listener_manager.listener_create_success
-  // check in server.listenerManager().listeners() that it is removed
 }
 
 void XdsVerifier::routeAdded(envoy::config::route::v3::RouteConfiguration route, bool updated) {
@@ -70,14 +66,15 @@ void XdsVerifier::routeAdded(envoy::config::route::v3::RouteConfiguration route,
 
   for (auto& listener_rep : listeners_) {
     if (getRoute(listener_rep.listener) == route.name()) {
-      ENVOY_LOG_MISC(info, "Moving {} to ACTIVE state", listener_rep.listener.name());
-      // it should successfully warm now
-      num_warming--;
-      num_active++;
-      listener_rep.state = ListenerState::ACTIVE;
+      if (listener_rep.state == WARMING) {
+        // it should successfully warm now
+        ENVOY_LOG_MISC(info, "Moving {} to ACTIVE state", listener_rep.listener.name());
+        num_warming_--;
+        num_active_++;
+        listener_rep.state = ListenerState::ACTIVE;
+      }
     }
   }
-  // check that the listener became active in the server stats
 }
 
 void XdsVerifier::routeRemoved(std::string& name) {

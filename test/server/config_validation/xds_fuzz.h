@@ -55,13 +55,14 @@ private:
   void verifyState();
   void verifyListeners();
   void drainListener(const std::string& name);
-  AssertionResult waitForAck(const std::string& expected_type_url, const std::string& expected_version);
+  AssertionResult waitForAck(const std::string& expected_type_url,
+                             const std::string& expected_version);
 
   envoy::admin::v3::ClustersConfigDump getClustersConfigDump();
   envoy::admin::v3::ListenersConfigDump getListenersConfigDump();
   envoy::admin::v3::RoutesConfigDump getRoutesConfigDump();
 
-  XdsVerifier verifier;
+  XdsVerifier verifier_;
 
   absl::optional<std::string> removeListener(uint32_t listener_num);
   absl::optional<std::string> removeRoute(uint32_t route_num);
