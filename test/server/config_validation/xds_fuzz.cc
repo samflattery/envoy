@@ -182,7 +182,7 @@ AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url,
     VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
   } while (expected_type_url != discovery_request.type_url() &&
            expected_version != discovery_request.version_info());
-  ENVOY_LOG_MISC(info, "Successfully received ACK for {} version {}", expected_type_url, expected_version);
+  /* ENVOY_LOG_MISC(info, "Successfully received ACK for {} version {}", expected_type_url, expected_version); */
   return AssertionSuccess();
 }
 
@@ -255,7 +255,7 @@ void XdsFuzzTest::replay() {
       } else {
         updateListener(listeners_, {}, {});
       }
-      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
       ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
                      test_server_->counter("listener_manager.listener_added")->value(),
                      test_server_->counter("listener_manager.listener_modified")->value(),
@@ -311,14 +311,14 @@ void XdsFuzzTest::replay() {
 void XdsFuzzTest::drainListener(const std::string& name) {
   // ensure that the listener drains correctly by checking that it is still draining halfway through
   ENVOY_LOG_MISC(info, "Draining {}", name);
-  EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(),
+  EXPECT_EQ(test_server_->gauge("listener_manager.total_listeners_draining")->value(),
             verifier_.numDraining());
-  timeSystem().advanceTimeWait(std::chrono::milliseconds(300));
-  EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(),
+  timeSystem().advanceTimeWait(std::chrono::milliseconds(300000));
+  EXPECT_EQ(test_server_->gauge("listener_manager.total_listeners_draining")->value(),
             verifier_.numDraining());
-  timeSystem().advanceTimeWait(std::chrono::milliseconds(301));
-  EXPECT_EQ(test_server_->counter("listener_manager.total_listeners_draining")->value(),
-            verifier_.numDraining());
+  timeSystem().advanceTimeWait(std::chrono::milliseconds(300001));
+  EXPECT_EQ(test_server_->gauge("listener_manager.total_listeners_draining")->value(),
+            verifier_.numDraining() - 1);
   verifier_.drainedListener(name);
 }
 
@@ -327,6 +327,7 @@ void XdsFuzzTest::verifyListeners() {
   const auto& listeners = verifier_.listeners();
   ENVOY_LOG_MISC(info, "There are {} listeners in listeners_", listeners.size());
   envoy::admin::v3::ListenersConfigDump listener_dump = getListenersConfigDump();
+  /* ENVOY_LOG_MISC(info, "{}", listener_dump.DebugString()); */
   for (auto& listener_rep : listeners) {
     ENVOY_LOG_MISC(info, "Verifying {} with state {}", listener_rep.listener.name(), listener_rep.state);
     bool found = false;
@@ -337,20 +338,20 @@ void XdsFuzzTest::verifyListeners() {
         switch (listener_rep.state) {
         case XdsVerifier::DRAINING:
           if (dump_listener.has_draining_state()) {
-            ENVOY_LOG_MISC(info, "Draining {}", listener_rep.listener.name());
+            ENVOY_LOG_MISC(info, "{} is draining", listener_rep.listener.name());
             drainListener(listener_rep.listener.name());
             found = true;
           }
           break;
         case XdsVerifier::WARMING:
           if (dump_listener.has_warming_state()) {
-            ENVOY_LOG_MISC(info, "Warming {}", listener_rep.listener.name());
+            ENVOY_LOG_MISC(info, "{} is warming", listener_rep.listener.name());
             found = true;
           }
           break;
         case XdsVerifier::ACTIVE:
           if (dump_listener.has_active_state()) {
-            ENVOY_LOG_MISC(info, "Active {}", listener_rep.listener.name());
+            ENVOY_LOG_MISC(info, "{} is active", listener_rep.listener.name());
             found = true;
           }
           break;
@@ -359,10 +360,11 @@ void XdsFuzzTest::verifyListeners() {
         }
       }
     }
-    if (!found)
-      ENVOY_LOG_MISC(info, "Expected to find listener {} in config dump");
+    if (!found) {
+      ENVOY_LOG_MISC(info, "Expected to find listener {} in config dump", listener_rep.listener.name());
       throw EnvoyException(
           fmt::format("Expected to find listener {} in config dump", listener_rep.listener.name()));
+    }
   }
 }
 

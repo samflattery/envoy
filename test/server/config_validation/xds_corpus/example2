@@ -20,9 +20,8 @@ actions {
   }
 }
 actions {
-  add_listener {
+  remove_listener {
 	listener_num: 1
-	route_num: 2
   }
 }
 config {
