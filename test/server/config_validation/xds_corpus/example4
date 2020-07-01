@@ -9,6 +9,11 @@ actions {
     route_num : 0
   }
 }
+actions {
+  remove_listener {
+    listener_num : 0
+  }
+}
 config {
   sotw_or_delta : SOTW
 }

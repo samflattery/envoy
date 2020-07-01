@@ -51,8 +51,6 @@ private:
   void verifyState();
   void verifyListeners();
   void drainListener(const std::string& name);
-  AssertionResult waitForAck(const std::string& expected_type_url,
-                             const std::string& expected_version);
 
   envoy::admin::v3::ClustersConfigDump getClustersConfigDump();
   envoy::admin::v3::ListenersConfigDump getListenersConfigDump();

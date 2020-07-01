@@ -19,12 +19,22 @@ std::string XdsVerifier::getRoute(envoy::config::listener::v3::Listener listener
 void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, bool updated) {
   if (updated) {
     // a listener in listeners_ needs to drain
-    for (auto& listener_rep : listeners_) {
-      if (listener_rep.listener.name() == listener.name()) {
-        ENVOY_LOG_MISC(info, "Moving {} to DRAINING state", listener.name());
-        num_active_--;
-        num_draining_++;
-        listener_rep.state = ListenerState::DRAINING;
+    auto it = listeners_.begin();
+    while (it != listeners_.end()) {
+      if (it->listener.name() == listener.name()) {
+        if (it->state == ACTIVE) {
+          ENVOY_LOG_MISC(info, "Moving {} to DRAINING state", listener.name());
+          num_active_--;
+          num_draining_++;
+          it->state = ListenerState::DRAINING;
+          ++it;
+        } else if (it->state == WARMING) {
+          ENVOY_LOG_MISC(info, "Removed warming listener {}", listener.name());
+          num_warming_--;
+          it = listeners_.erase(it);
+        } else {
+          ++it;
+        }
       }
     }
   }
@@ -48,12 +58,22 @@ void XdsVerifier::listenerAdded(envoy::config::listener::v3::Listener listener, 
 }
 
 void XdsVerifier::listenerRemoved(std::string& name) {
-  for (auto& listener_rep : listeners_) {
-    if (listener_rep.listener.name() == name) {
-      ENVOY_LOG_MISC(info, "Changing {} to DRAINING", name);
-      num_active_--;
-      num_draining_++;
-      listener_rep.state = ListenerState::DRAINING;
+  auto it = listeners_.begin();
+  while (it != listeners_.end()) {
+    if (it->listener.name() == name) {
+      if (it->state == ACTIVE) {
+        ENVOY_LOG_MISC(info, "Changing {} to DRAINING", name);
+        num_active_--;
+        num_draining_++;
+        it->state = ListenerState::DRAINING;
+        ++it;
+      } else if (it->state == WARMING) {
+        ENVOY_LOG_MISC(info, "Removed warming listener {}", name);
+        num_warming_--;
+        it = listeners_.erase(it);
+      } else {
+        ++it;
+      }
     }
   }
 }

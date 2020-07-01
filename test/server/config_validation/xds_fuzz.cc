@@ -140,17 +140,6 @@ absl::optional<std::string> XdsFuzzTest::removeRoute(uint32_t route_num) {
   return {};
 }
 
-AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url,
-                                        const std::string& expected_version) {
-  API_NO_BOOST(envoy::api::v2::DiscoveryRequest) discovery_request;
-  do {
-    VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
-  } while (expected_type_url != discovery_request.type_url() &&
-           expected_version != discovery_request.version_info());
-  /* ENVOY_LOG_MISC(info, "Successfully received ACK for {} version {}", expected_type_url, expected_version); */
-  return AssertionSuccess();
-}
-
 /**
  * wait for a specific ACK, ignoring any other ACKs that are made in the meantime
  * @param the expected API type url of the ack
@@ -164,8 +153,8 @@ AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url,
     do {
       VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
       ENVOY_LOG_MISC(info, "Received gRPC message with type {} and version {}",
-                     discovery_request.type_url(), expected_version);
-    } while (expected_type_url != discovery_request.type_url() &&
+                     discovery_request.type_url(), discovery_request.version_info());
+    } while (expected_type_url != discovery_request.type_url() ||
              expected_version != discovery_request.version_info());
   } else {
     API_NO_BOOST(envoy::api::v2::DeltaDiscoveryRequest) delta_discovery_request;
@@ -223,6 +212,9 @@ void XdsFuzzTest::replay() {
 
       updateListener(listeners_, {listener}, {});
 
+      // use waitForAck instead of compareDiscoveryRequest as the client makes
+      // additional discoveryRequests at launch that we might not want to
+      // respond to yet
       EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
 
       if (removed) {
@@ -242,26 +234,12 @@ void XdsFuzzTest::replay() {
     }
     case test::server::config_validation::Action::kRemoveListener: {
       ENVOY_LOG_MISC(info, "Removing listener_{}", action.remove_listener().listener_num());
-=======
-      sent_listener = true;
-      uint32_t listener_num = action.add_listener().listener_num();
-      removeListener(listener_num);
-      auto listener = buildListener(listener_num, action.add_listener().route_num());
-      listeners_.push_back(listener);
-
-      updateListener(listeners_, {listener}, {});
-      // use waitForAck instead of compareDiscoveryRequest as the client makes
-      // additional discoveryRequests at launch that we might not want to
-      // respond to yet
-      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
-      break;
-    }
-    case test::server::config_validation::Action::kRemoveListener: {
       auto removed = removeListener(action.remove_listener().listener_num());
 
       if (removed) {
         removed_++;
         updateListener(listeners_, {}, {*removed});
+        EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
         verifier_.listenerRemoved(*removed);
         test_server_->waitForCounterGe("listener_manager.listener_removed", removed_);
       } else {
@@ -276,43 +254,35 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kAddRoute: {
-      ENVOY_LOG_MISC(info, "Adding route_{}", action.add_route().route_num());
-      auto removed = removeRoute(action.add_route().route_num());
-      auto route = buildRouteConfig(action.add_route().route_num());
-      routes_.push_back(route);
-      updateRoute(routes_, {route}, {});
-      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
-
-      if (removed) {
-        verifier_.routeAdded(route, true);
-      } else {
-        verifier_.routeAdded(route, false);
+      if (!sent_listener) {
+        ENVOY_LOG_MISC(info, "Ignoring request to add route_{}", action.add_route().route_num());
+        break;
       }
-
+      ENVOY_LOG_MISC(info, "Adding route_{}", action.add_route().route_num());
       uint32_t route_num = action.add_route().route_num();
       auto removed = removeRoute(route_num);
       auto route = buildRouteConfig(route_num);
       routes_.push_back(route);
-
       if (removed) {
         // if the route was already in routes_, don't send a duplicate add in delta request
         updateRoute(routes_, {}, {});
+        verifier_.routeAdded(route, true);
       } else {
         updateRoute(routes_, {route}, {});
+        verifier_.routeAdded(route, false);
       }
 
-      if (sent_listener) {
-        EXPECT_TRUE(
-            waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
-      }
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
+
       break;
     }
     case test::server::config_validation::Action::kRemoveRoute: {
-      ENVOY_LOG_MISC(info, "Removing route_{}", action.remove_route().route_num());
       if (sotw_or_delta_ == Grpc::SotwOrDelta::Sotw) {
         // routes cannot be removed in SOTW updates
+        ENVOY_LOG_MISC(info, "Ignoring request to remove route_{}", action.remove_route().route_num());
         break;
       }
+      ENVOY_LOG_MISC(info, "Removing route_{}", action.remove_route().route_num());
 
       auto removed = removeRoute(action.remove_route().route_num());
 
@@ -321,8 +291,6 @@ void XdsFuzzTest::replay() {
         verifier_.routeRemoved(*removed);
       } else {
         updateRoute(routes_, {}, {});
-        EXPECT_TRUE(
-            waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
       }
       break;
     }
@@ -357,7 +325,7 @@ void XdsFuzzTest::verifyListeners() {
   const auto& listeners = verifier_.listeners();
   ENVOY_LOG_MISC(info, "There are {} listeners in listeners_", listeners.size());
   envoy::admin::v3::ListenersConfigDump listener_dump = getListenersConfigDump();
-  /* ENVOY_LOG_MISC(info, "{}", listener_dump.DebugString()); */
+  ENVOY_LOG_MISC(info, "{}", listener_dump.DebugString());
   for (auto& listener_rep : listeners) {
     ENVOY_LOG_MISC(info, "Verifying {} with state {}", listener_rep.listener.name(), listener_rep.state);
     bool found = false;
