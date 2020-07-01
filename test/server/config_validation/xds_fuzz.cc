@@ -7,15 +7,12 @@
 #include "envoy/config/listener/v3/listener.pb.h"
 #include "envoy/config/route/v3/route.pb.h"
 
-#include "common/protobuf/protobuf.h"
-#include "common/protobuf/utility.h"
-
 namespace Envoy {
 
 // helper functions to build API responses
 envoy::config::cluster::v3::Cluster XdsFuzzTest::buildCluster(const std::string& name) {
   return ConfigHelper::buildCluster(name, "ROUND_ROBIN", api_version_);
-}
+};
 
 envoy::config::endpoint::v3::ClusterLoadAssignment
 XdsFuzzTest::buildClusterLoadAssignment(const std::string& name) {
@@ -26,14 +23,14 @@ XdsFuzzTest::buildClusterLoadAssignment(const std::string& name) {
 
 envoy::config::listener::v3::Listener XdsFuzzTest::buildListener(uint32_t listener_num,
                                                                  uint32_t route_num) {
-  std::string name = fmt::format("{}{}", "listener_", listener_num % NUM_LISTENERS);
-  std::string route = fmt::format("{}{}", "route_config_", route_num % NUM_ROUTES);
+  std::string name = absl::StrCat("listener_", listener_num % ListenersMax);
+  std::string route = absl::StrCat("route_config_", route_num % RoutesMax);
   return ConfigHelper::buildListener(
       name, route, Network::Test::getLoopbackAddressString(ip_version_), "ads_test", api_version_);
 }
 
 envoy::config::route::v3::RouteConfiguration XdsFuzzTest::buildRouteConfig(uint32_t route_num) {
-  std::string route = fmt::format("{}{}", "route_config_", route_num % NUM_ROUTES);
+  std::string route = absl::StrCat("route_config_", route_num % RoutesMax);
   return ConfigHelper::buildRouteConfig(route, "cluster_0", api_version_);
 }
 
@@ -61,35 +58,17 @@ void XdsFuzzTest::updateRoute(
 XdsFuzzTest::XdsFuzzTest(const test::server::config_validation::XdsTestCase& input,
                          envoy::config::core::v3::ApiVersion api_version)
     : HttpIntegrationTest(
-          Http::CodecClient::Type::HTTP2,
-          input.config().ip_version() == test::server::config_validation::Config::IPv4
-              ? Network::Address::IpVersion::v4
-              : Network::Address::IpVersion::v6,
+          Http::CodecClient::Type::HTTP2, TestEnvironment::getIpVersionsForTest()[0],
           ConfigHelper::adsBootstrap(input.config().sotw_or_delta() ==
                                              test::server::config_validation::Config::SOTW
                                          ? "GRPC"
                                          : "DELTA_GRPC",
                                      api_version)),
-      actions_(input.actions()), version_(1), api_version_(api_version) {
+      actions_(input.actions()), version_(1), api_version_(api_version),
+      ip_version_(TestEnvironment::getIpVersionsForTest()[0]) {
   use_lds_ = false;
   create_xds_upstream_ = true;
   tls_xds_upstream_ = false;
-
-  parseConfig(input);
-}
-
-void XdsFuzzTest::parseConfig(const test::server::config_validation::XdsTestCase& input) {
-  if (input.config().ip_version() == test::server::config_validation::Config::IPv4) {
-    ip_version_ = Network::Address::IpVersion::v4;
-  } else {
-    ip_version_ = Network::Address::IpVersion::v6;
-  }
-
-  if (input.config().client_type() == test::server::config_validation::Config::GOOGLE_GRPC) {
-    client_type_ = Grpc::ClientType::GoogleGrpc;
-  } else {
-    client_type_ = Grpc::ClientType::EnvoyGrpc;
-  }
 
   if (input.config().sotw_or_delta() == test::server::config_validation::Config::SOTW) {
     sotw_or_delta_ = Grpc::SotwOrDelta::Sotw;
@@ -102,24 +81,12 @@ void XdsFuzzTest::parseConfig(const test::server::config_validation::XdsTestCase
  * initialize an envoy configured with a fully dynamic bootstrap with ADS over gRPC
  */
 void XdsFuzzTest::initialize() {
-  config_helper_.addConfigModifier([this](envoy::config::bootstrap::v3::Bootstrap& bootstrap) {
+  config_helper_.addConfigModifier([](envoy::config::bootstrap::v3::Bootstrap& bootstrap) {
     auto* ads_config = bootstrap.mutable_dynamic_resources()->mutable_ads_config();
     auto* grpc_service = ads_config->add_grpc_services();
 
     std::string cluster_name = "ads_cluster";
-    switch (client_type_) {
-    case Grpc::ClientType::EnvoyGrpc:
-      grpc_service->mutable_envoy_grpc()->set_cluster_name(cluster_name);
-      break;
-    case Grpc::ClientType::GoogleGrpc: {
-      auto* google_grpc = grpc_service->mutable_google_grpc();
-      google_grpc->set_target_uri(xds_upstream_->localAddress()->asString());
-      google_grpc->set_stat_prefix(cluster_name);
-      break;
-    }
-    default:
-      NOT_REACHED_GCOVR_EXCL_LINE;
-    }
+    grpc_service->mutable_envoy_grpc()->set_cluster_name(cluster_name);
     auto* ads_cluster = bootstrap.mutable_static_resources()->add_clusters();
     ads_cluster->MergeFrom(bootstrap.static_resources().clusters()[0]);
     ads_cluster->set_name("ads_cluster");
@@ -146,13 +113,12 @@ void XdsFuzzTest::close() {
  * @return the listener as an optional so that it can be used in a delta request
  */
 absl::optional<std::string> XdsFuzzTest::removeListener(uint32_t listener_num) {
-  std::string match = fmt::format("{}{}", "listener_", listener_num % NUM_LISTENERS);
+  std::string match = absl::StrCat("listener_", listener_num % ListenersMax);
 
   for (auto it = listeners_.begin(); it != listeners_.end(); ++it) {
     if (it->name() == match) {
-      std::string name = it->name();
       listeners_.erase(it);
-      return name;
+      return match;
     }
   }
   return {};
@@ -164,12 +130,11 @@ absl::optional<std::string> XdsFuzzTest::removeListener(uint32_t listener_num) {
  * @return the route as an optional so that it can be used in a delta request
  */
 absl::optional<std::string> XdsFuzzTest::removeRoute(uint32_t route_num) {
-  std::string match = fmt::format("{}{}", "route_config_", route_num % NUM_ROUTES);
+  std::string match = absl::StrCat("route_config_", route_num % RoutesMax);
   for (auto it = routes_.begin(); it != routes_.end(); ++it) {
     if (it->name() == match) {
-      std::string name = it->name();
       routes_.erase(it);
-      return name;
+      return match;
     }
   }
   return {};
@@ -187,6 +152,34 @@ AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url,
 }
 
 /**
+ * wait for a specific ACK, ignoring any other ACKs that are made in the meantime
+ * @param the expected API type url of the ack
+ * @param the expected version number
+ * @return AssertionSuccess() if the ack was received, else an AssertionError()
+ */
+AssertionResult XdsFuzzTest::waitForAck(const std::string& expected_type_url,
+                                        const std::string& expected_version) {
+  if (sotw_or_delta_ == Grpc::SotwOrDelta::Sotw) {
+    API_NO_BOOST(envoy::api::v2::DiscoveryRequest) discovery_request;
+    do {
+      VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
+      ENVOY_LOG_MISC(info, "Received gRPC message with type {} and version {}",
+                     discovery_request.type_url(), expected_version);
+    } while (expected_type_url != discovery_request.type_url() &&
+             expected_version != discovery_request.version_info());
+  } else {
+    API_NO_BOOST(envoy::api::v2::DeltaDiscoveryRequest) delta_discovery_request;
+    do {
+      VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, delta_discovery_request));
+      ENVOY_LOG_MISC(info, "Received gRPC message with type {}",
+                     delta_discovery_request.type_url());
+    } while (expected_type_url != delta_discovery_request.type_url());
+  }
+  version_++;
+  return AssertionSuccess();
+}
+
+/**
  * run the sequence of actions defined in the fuzzed protobuf
  */
 void XdsFuzzTest::replay() {
@@ -196,24 +189,26 @@ void XdsFuzzTest::replay() {
   EXPECT_TRUE(compareDiscoveryRequest(Config::TypeUrl::get().Cluster, "", {}, {}, {}, true));
   sendDiscoveryResponse<envoy::config::cluster::v3::Cluster>(Config::TypeUrl::get().Cluster,
                                                              {buildCluster("cluster_0")},
-                                                             {buildCluster("cluster_0")}, {}, "1");
+                                                             {buildCluster("cluster_0")}, {}, "0");
   EXPECT_TRUE(compareDiscoveryRequest(Config::TypeUrl::get().ClusterLoadAssignment, "",
                                       {"cluster_0"}, {"cluster_0"}, {}));
   sendDiscoveryResponse<envoy::config::endpoint::v3::ClusterLoadAssignment>(
       Config::TypeUrl::get().ClusterLoadAssignment, {buildClusterLoadAssignment("cluster_0")},
-      {buildClusterLoadAssignment("cluster_0")}, {}, "1");
+      {buildClusterLoadAssignment("cluster_0")}, {}, "0");
 
   ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
                  test_server_->counter("listener_manager.listener_added")->value(),
                  test_server_->counter("listener_manager.listener_modified")->value(),
                  test_server_->counter("listener_manager.listener_removed")->value());
 
-  version_++;
+  // the client will not subscribe to the RouteConfiguration type URL until it
+  // receives a listener, and the ACKS it sends back seem to be an empty type
+  // URL so just don't check them until a listener is added
+  bool sent_listener = false;
 
   uint32_t added = 0;
   uint32_t modified = 0;
   uint32_t removed_ = 0;
-  bool sent_listener = false;
 
   for (const auto& action : actions_) {
     switch (action.action_selector_case()) {
@@ -247,6 +242,21 @@ void XdsFuzzTest::replay() {
     }
     case test::server::config_validation::Action::kRemoveListener: {
       ENVOY_LOG_MISC(info, "Removing listener_{}", action.remove_listener().listener_num());
+=======
+      sent_listener = true;
+      uint32_t listener_num = action.add_listener().listener_num();
+      removeListener(listener_num);
+      auto listener = buildListener(listener_num, action.add_listener().route_num());
+      listeners_.push_back(listener);
+
+      updateListener(listeners_, {listener}, {});
+      // use waitForAck instead of compareDiscoveryRequest as the client makes
+      // additional discoveryRequests at launch that we might not want to
+      // respond to yet
+      EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
+      break;
+    }
+    case test::server::config_validation::Action::kRemoveListener: {
       auto removed = removeListener(action.remove_listener().listener_num());
 
       if (removed) {
@@ -256,9 +266,7 @@ void XdsFuzzTest::replay() {
         test_server_->waitForCounterGe("listener_manager.listener_removed", removed_);
       } else {
         updateListener(listeners_, {}, {});
-      }
-      if (sent_listener) {
-        EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
+        EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
       }
       ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
                      test_server_->counter("listener_manager.listener_added")->value(),
@@ -281,6 +289,22 @@ void XdsFuzzTest::replay() {
         verifier_.routeAdded(route, false);
       }
 
+      uint32_t route_num = action.add_route().route_num();
+      auto removed = removeRoute(route_num);
+      auto route = buildRouteConfig(route_num);
+      routes_.push_back(route);
+
+      if (removed) {
+        // if the route was already in routes_, don't send a duplicate add in delta request
+        updateRoute(routes_, {}, {});
+      } else {
+        updateRoute(routes_, {route}, {});
+      }
+
+      if (sent_listener) {
+        EXPECT_TRUE(
+            waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
+      }
       break;
     }
     case test::server::config_validation::Action::kRemoveRoute: {
@@ -297,6 +321,8 @@ void XdsFuzzTest::replay() {
         verifier_.routeRemoved(*removed);
       } else {
         updateRoute(routes_, {}, {});
+        EXPECT_TRUE(
+            waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
       }
       break;
     }

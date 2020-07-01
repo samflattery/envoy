@@ -27,6 +27,7 @@ envoy_cc_test(
         "//include/envoy/upstream:resource_manager_interface",
         "//include/envoy/upstream:upstream_interface",
         "//source/common/api:api_lib",
+        "//source/common/singleton:manager_impl_lib",
         "//source/common/stats:stats_lib",
         "//source/extensions/transport_sockets/tls:context_lib",
         "//source/server/config_validation:cluster_manager_lib",
@@ -39,7 +40,7 @@ envoy_cc_test(
         "//test/mocks/protobuf:protobuf_mocks",
         "//test/mocks/runtime:runtime_mocks",
         "//test/mocks/secret:secret_mocks",
-        "//test/mocks/server:server_mocks",
+        "//test/mocks/server:admin_mocks",
         "//test/mocks/thread_local:thread_local_mocks",
         "//test/mocks/upstream:upstream_mocks",
         "//test/test_common:simulated_time_system_lib",
@@ -110,7 +111,6 @@ envoy_cc_fuzz_test(
 envoy_proto_library(
     name = "xds_fuzz_proto",
     srcs = ["xds_fuzz.proto"],
-    deps = [],
 )
 
 envoy_cc_test_library(
@@ -136,7 +136,6 @@ envoy_cc_test_library(
         ":xds_fuzz_proto_cc_proto",
         ":xds_verifier_lib",
         "//test/integration:http_integration_lib",
-        "//test/integration:integration_lib",
         "@envoy_api//envoy/admin/v3:pkg_cc_proto",
         "@envoy_api//envoy/config/bootstrap/v3:pkg_cc_proto",
         "@envoy_api//envoy/config/cluster/v3:pkg_cc_proto",
