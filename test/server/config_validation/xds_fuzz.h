@@ -46,6 +46,9 @@ public:
   void replay();
   void close();
 
+  const size_t ListenersMax = 3;
+  const size_t RoutesMax = 5;
+
 private:
   void parseConfig(const test::server::config_validation::XdsTestCase& input);
   void verifyState();
@@ -71,9 +74,6 @@ private:
   envoy::config::core::v3::ApiVersion api_version_;
 
   Network::Address::IpVersion ip_version_;
-
-  const size_t ListenersMax = 3;
-  const size_t RoutesMax = 5;
 };
 
 } // namespace Envoy
