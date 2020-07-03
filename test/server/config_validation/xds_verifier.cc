@@ -83,6 +83,8 @@ void XdsVerifier::routeAdded(envoy::config::route::v3::RouteConfiguration route,
     // do routes do anything when they're updated?
   }
 
+  routes_.push_back(route);
+
   for (auto& listener_rep : listeners_) {
     if (getRoute(listener_rep.listener) == route.name()) {
       if (listener_rep.state == WARMING) {

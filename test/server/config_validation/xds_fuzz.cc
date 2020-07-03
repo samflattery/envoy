@@ -1,11 +1,12 @@
 #include "test/server/config_validation/xds_fuzz.h"
 
-#include "common/common/logger.h"
 #include "envoy/config/bootstrap/v3/bootstrap.pb.h"
 #include "envoy/config/cluster/v3/cluster.pb.h"
 #include "envoy/config/endpoint/v3/endpoint.pb.h"
 #include "envoy/config/listener/v3/listener.pb.h"
 #include "envoy/config/route/v3/route.pb.h"
+
+#include "common/common/logger.h"
 
 namespace Envoy {
 
@@ -185,10 +186,12 @@ void XdsFuzzTest::replay() {
       Config::TypeUrl::get().ClusterLoadAssignment, {buildClusterLoadAssignment("cluster_0")},
       {buildClusterLoadAssignment("cluster_0")}, {}, "0");
 
-  ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
+  ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}, warming {}, active {}",
                  test_server_->counter("listener_manager.listener_added")->value(),
                  test_server_->counter("listener_manager.listener_modified")->value(),
-                 test_server_->counter("listener_manager.listener_removed")->value());
+                 test_server_->counter("listener_manager.listener_removed")->value(),
+                 test_server_->gauge("listener_manager.total_listeners_warming")->value(),
+                 test_server_->gauge("listener_manager.total_listeners_active")->value());
 
   // the client will not subscribe to the RouteConfiguration type URL until it
   // receives a listener, and the ACKS it sends back seem to be an empty type
@@ -203,7 +206,7 @@ void XdsFuzzTest::replay() {
     switch (action.action_selector_case()) {
     case test::server::config_validation::Action::kAddListener: {
       ENVOY_LOG_MISC(info, "Adding listener_{} with reference to route_{}",
-                     action.add_listener().listener_num(), action.add_listener().route_num());
+                     action.add_listener().listener_num(), action.add_listener().route_num() % RoutesMax);
       sent_listener = true;
       auto removed = removeListener(action.add_listener().listener_num());
       auto listener =
@@ -226,10 +229,13 @@ void XdsFuzzTest::replay() {
         verifier_.listenerAdded(listener, false);
         test_server_->waitForCounterGe("listener_manager.listener_added", added);
       }
-      ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
+
+      ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}, warming {}, active {}",
                      test_server_->counter("listener_manager.listener_added")->value(),
                      test_server_->counter("listener_manager.listener_modified")->value(),
-                     test_server_->counter("listener_manager.listener_removed")->value());
+                     test_server_->counter("listener_manager.listener_removed")->value(),
+                     test_server_->gauge("listener_manager.total_listeners_warming")->value(),
+                     test_server_->gauge("listener_manager.total_listeners_active")->value());
       break;
     }
     case test::server::config_validation::Action::kRemoveListener: {
@@ -246,10 +252,12 @@ void XdsFuzzTest::replay() {
         updateListener(listeners_, {}, {});
         EXPECT_TRUE(waitForAck(Config::TypeUrl::get().Listener, std::to_string(version_)));
       }
-      ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}",
+      ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}, warming {}, active {}",
                      test_server_->counter("listener_manager.listener_added")->value(),
                      test_server_->counter("listener_manager.listener_modified")->value(),
-                     test_server_->counter("listener_manager.listener_removed")->value());
+                     test_server_->counter("listener_manager.listener_removed")->value(),
+                     test_server_->gauge("listener_manager.total_listeners_warming")->value(),
+                     test_server_->gauge("listener_manager.total_listeners_active")->value());
 
       break;
     }
@@ -274,12 +282,22 @@ void XdsFuzzTest::replay() {
 
       EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
 
+      ENVOY_LOG_MISC(info, "added: {}, modified {}, removed {}, warming {}, active {}",
+                     test_server_->counter("listener_manager.listener_added")->value(),
+                     test_server_->counter("listener_manager.listener_modified")->value(),
+                     test_server_->counter("listener_manager.listener_removed")->value(),
+                     test_server_->gauge("listener_manager.total_listeners_warming")->value(),
+                     test_server_->gauge("listener_manager.total_listeners_active")->value());
+
+      test_server_->waitForGaugeGe("listener_manager.total_listeners_active", verifier_.numActive());
+
       break;
     }
     case test::server::config_validation::Action::kRemoveRoute: {
       if (sotw_or_delta_ == Grpc::SotwOrDelta::Sotw) {
         // routes cannot be removed in SOTW updates
-        ENVOY_LOG_MISC(info, "Ignoring request to remove route_{}", action.remove_route().route_num());
+        ENVOY_LOG_MISC(info, "Ignoring request to remove route_{}",
+                       action.remove_route().route_num());
         break;
       }
       ENVOY_LOG_MISC(info, "Removing route_{}", action.remove_route().route_num());
@@ -327,12 +345,14 @@ void XdsFuzzTest::verifyListeners() {
   envoy::admin::v3::ListenersConfigDump listener_dump = getListenersConfigDump();
   ENVOY_LOG_MISC(info, "{}", listener_dump.DebugString());
   for (auto& listener_rep : listeners) {
-    ENVOY_LOG_MISC(info, "Verifying {} with state {}", listener_rep.listener.name(), listener_rep.state);
+    ENVOY_LOG_MISC(info, "Verifying {} with state {}", listener_rep.listener.name(),
+                   listener_rep.state);
     bool found = false;
     for (auto& dump_listener : listener_dump.dynamic_listeners()) {
       if (dump_listener.name() == listener_rep.listener.name()) {
         ENVOY_LOG_MISC(info, "Found a matching listener in config dump");
-        ENVOY_LOG_MISC(info, "drain: {}, warm {}, active {}", dump_listener.has_draining_state(), dump_listener.has_warming_state(), dump_listener.has_active_state());
+        ENVOY_LOG_MISC(info, "drain: {}, warm {}, active {}", dump_listener.has_draining_state(),
+                       dump_listener.has_warming_state(), dump_listener.has_active_state());
         switch (listener_rep.state) {
         case XdsVerifier::DRAINING:
           if (dump_listener.has_draining_state()) {
@@ -359,14 +379,18 @@ void XdsFuzzTest::verifyListeners() {
       }
     }
     if (!found) {
-      ENVOY_LOG_MISC(info, "Expected to find listener {} in config dump", listener_rep.listener.name());
-      throw EnvoyException(
-          fmt::format("Expected to find listener {} in config dump", listener_rep.listener.name()));
+      ENVOY_LOG_MISC(info, "Expected to find listener {} in config dump",
+                     listener_rep.listener.name());
+      EXPECT_EQ(1, 0);
+      return;
+      /* throw EnvoyException( */
+      /*     fmt::format("Expected to find listener {} in config dump", listener_rep.listener.name())); */
     }
   }
 }
 
 void XdsFuzzTest::verifyState() {
+  /* sleep(2); */
   verifyListeners();
   ENVOY_LOG_MISC(info, "Verified listeners");
 
