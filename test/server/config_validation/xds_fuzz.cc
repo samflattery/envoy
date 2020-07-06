@@ -206,7 +206,8 @@ void XdsFuzzTest::replay() {
     switch (action.action_selector_case()) {
     case test::server::config_validation::Action::kAddListener: {
       ENVOY_LOG_MISC(info, "Adding listener_{} with reference to route_{}",
-                     action.add_listener().listener_num(), action.add_listener().route_num() % RoutesMax);
+                     action.add_listener().listener_num(),
+                     action.add_listener().route_num() % RoutesMax);
       sent_listener = true;
       auto removed = removeListener(action.add_listener().listener_num());
       auto listener =
@@ -288,8 +289,6 @@ void XdsFuzzTest::replay() {
                      test_server_->counter("listener_manager.listener_removed")->value(),
                      test_server_->gauge("listener_manager.total_listeners_warming")->value(),
                      test_server_->gauge("listener_manager.total_listeners_active")->value());
-
-      test_server_->waitForGaugeGe("listener_manager.total_listeners_active", verifier_.numActive());
 
       break;
     }
@@ -388,10 +387,11 @@ void XdsFuzzTest::verifyListeners() {
     if (!found) {
       ENVOY_LOG_MISC(info, "Expected to find listener {} in config dump",
                      listener_rep.listener.name());
-      EXPECT_EQ(1, 0);
+      EXPECT_EQ(1, 0); // temporary to just log the error but not crash
       return;
       /* throw EnvoyException( */
-      /*     fmt::format("Expected to find listener {} in config dump", listener_rep.listener.name())); */
+      /*     fmt::format("Expected to find listener {} in config dump",
+       * listener_rep.listener.name())); */
     }
   }
 }
