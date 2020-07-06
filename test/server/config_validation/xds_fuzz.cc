@@ -206,7 +206,7 @@ void XdsFuzzTest::replay() {
     switch (action.action_selector_case()) {
     case test::server::config_validation::Action::kAddListener: {
       ENVOY_LOG_MISC(info, "Adding listener_{} with reference to route_{}",
-                     action.add_listener().listener_num(),
+                     action.add_listener().listener_num() % ListenersMax,
                      action.add_listener().route_num() % RoutesMax);
       sent_listener = true;
       auto removed = removeListener(action.add_listener().listener_num());
@@ -240,7 +240,8 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kRemoveListener: {
-      ENVOY_LOG_MISC(info, "Removing listener_{}", action.remove_listener().listener_num());
+      ENVOY_LOG_MISC(info, "Removing listener_{}",
+                     action.remove_listener().listener_num() % ListenersMax);
       auto removed = removeListener(action.remove_listener().listener_num());
 
       if (removed) {
@@ -267,7 +268,7 @@ void XdsFuzzTest::replay() {
         ENVOY_LOG_MISC(info, "Ignoring request to add route_{}", action.add_route().route_num());
         break;
       }
-      ENVOY_LOG_MISC(info, "Adding route_{}", action.add_route().route_num());
+      ENVOY_LOG_MISC(info, "Adding route_{}", action.add_route().route_num() % RoutesMax);
       uint32_t route_num = action.add_route().route_num();
       auto removed = removeRoute(route_num);
       auto route = buildRouteConfig(route_num);
