@@ -223,11 +223,11 @@ void XdsFuzzTest::replay() {
 
       if (removed) {
         modified++;
-        verifier_.listenerAdded(listener, true);
+        verifier_.listenerUpdated(listener);
         test_server_->waitForCounterGe("listener_manager.listener_modified", modified);
       } else {
         added++;
-        verifier_.listenerAdded(listener, false);
+        verifier_.listenerAdded(listener);
         test_server_->waitForCounterGe("listener_manager.listener_added", added);
       }
 
@@ -275,10 +275,10 @@ void XdsFuzzTest::replay() {
       if (removed) {
         // if the route was already in routes_, don't send a duplicate add in delta request
         updateRoute(routes_, {}, {});
-        verifier_.routeAdded(route, true);
+        verifier_.routeUpdated(route);
       } else {
         updateRoute(routes_, {route}, {});
-        verifier_.routeAdded(route, false);
+        verifier_.routeAdded(route);
       }
 
       EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));

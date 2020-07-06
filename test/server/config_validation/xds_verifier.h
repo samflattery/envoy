@@ -11,11 +11,14 @@ namespace Envoy {
 class XdsVerifier {
 public:
   XdsVerifier();
-  void listenerAdded(envoy::config::listener::v3::Listener listener, bool updated = false);
+  void listenerAdded(envoy::config::listener::v3::Listener listener);
+  void listenerUpdated(envoy::config::listener::v3::Listener listener);
   void listenerRemoved(std::string& name);
-  void routeAdded(envoy::config::route::v3::RouteConfiguration route, bool updated = false);
-  void routeRemoved(std::string& name);
   void drainedListener(const std::string& name);
+
+  void routeAdded(envoy::config::route::v3::RouteConfiguration route);
+  void routeUpdated(envoy::config::route::v3::RouteConfiguration route);
+  void routeRemoved(std::string& name);
 
   enum ListenerState { WARMING, ACTIVE, DRAINING };
   struct ListenerRep {
