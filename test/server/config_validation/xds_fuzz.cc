@@ -294,6 +294,13 @@ void XdsFuzzTest::replay() {
       break;
     }
     case test::server::config_validation::Action::kRemoveRoute: {
+      ENVOY_LOG_MISC(info, "Ignoring request to remove route_{}",
+                     action.remove_route().route_num());
+      // it seems like routes cannot be removed
+      // leaving a route out of an SOTW request does not remove it and sending a
+      // remove message in a delta request is ignored
+      break;
+
       if (sotw_or_delta_ == Grpc::SotwOrDelta::Sotw) {
         // routes cannot be removed in SOTW updates
         ENVOY_LOG_MISC(info, "Ignoring request to remove route_{}",
@@ -390,7 +397,6 @@ void XdsFuzzTest::verifyListeners() {
 }
 
 void XdsFuzzTest::verifyState() {
-  /* sleep(2); */
   verifyListeners();
   ENVOY_LOG_MISC(info, "Verified listeners");
 
