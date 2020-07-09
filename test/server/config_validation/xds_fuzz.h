@@ -19,7 +19,7 @@
 
 namespace Envoy {
 
-class XdsFuzzTest : public HttpIntegrationTest {
+class XdsFuzzTest : public Event::TestUsingSimulatedTime, public HttpIntegrationTest {
 public:
   XdsFuzzTest(const test::server::config_validation::XdsTestCase& input,
               envoy::config::core::v3::ApiVersion api_version);
@@ -53,7 +53,6 @@ private:
   void parseConfig(const test::server::config_validation::XdsTestCase& input);
   void verifyState();
   void verifyListeners();
-  void drainListener(const std::string& name);
 
   envoy::admin::v3::ClustersConfigDump getClustersConfigDump();
   envoy::admin::v3::ListenersConfigDump getListenersConfigDump();
