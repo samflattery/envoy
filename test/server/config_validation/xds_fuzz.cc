@@ -255,7 +255,8 @@ void XdsFuzzTest::replay() {
           verifier_.routeAdded(route);
         }
 
-        EXPECT_TRUE(waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
+        EXPECT_TRUE(
+            waitForAck(Config::TypeUrl::get().RouteConfiguration, std::to_string(version_)));
       }
       sent_listener = true;
 
@@ -288,7 +289,8 @@ void XdsFuzzTest::replay() {
       /* test_server_->server().dispatcher().post([this, &drain_sequence_started, &action]() { */
       /*   ENVOY_LOG_MISC(info, "drain sequence starting"); */
       /*   test_server_->drainManager().startDrainSequence([this, &action] { */
-      /*     verifier_.drainedListener(absl::StrCat("listener_", action.remove_listener().listener_num())); */
+      /*     verifier_.drainedListener(absl::StrCat("listener_",
+       * action.remove_listener().listener_num())); */
       /*     ENVOY_LOG_MISC(info, "successfully removed all listeners"); */
       /*   }); */
       /*   drain_sequence_started.Notify(); */
@@ -438,7 +440,6 @@ void XdsFuzzTest::verifyState() {
   EXPECT_EQ(verifier_.numDraining(), 0);
 
   ENVOY_LOG_MISC(info, "Drained listeners");
-
 }
 
 envoy::admin::v3::ClustersConfigDump XdsFuzzTest::getClustersConfigDump() {
