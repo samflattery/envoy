@@ -825,9 +825,9 @@ void Filter::onResponseTimeout() {
                                absl::optional<uint64_t>(enumToInt(timeout_response_code_)));
       }
 
+      upstream_request->resetStream();
       chargeUpstreamAbort(timeout_response_code_, false, *upstream_request);
     }
-    upstream_request->resetStream();
   }
 
   onUpstreamTimeoutAbort(StreamInfo::ResponseFlag::UpstreamRequestTimeout,
