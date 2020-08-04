@@ -411,13 +411,11 @@ TEST_F(RouterTest, TimeoutCrash) {
   Buffer::OwnedImpl data;
   router_.decodeData(data, true);
 
-  // what should this call???
   EXPECT_CALL(cm_.conn_pool_, onDestroy()).WillOnce(Invoke([&]() {
     ENVOY_LOG_MISC(info, "reset stream");
     encoder.stream_.resetStream(Http::StreamResetReason::RemoteReset);
   }));
   sleep(1);
-  /* timeSystem().advanceTimeWait(std::chrono::milliseconds(501)); */
   Http::ResponseHeaderMapPtr response_headers(
       new Http::TestResponseHeaderMapImpl{{":status", "200"}});
   response_decoder->decodeHeaders(std::move(response_headers), true);
