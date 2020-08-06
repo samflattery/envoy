@@ -74,8 +74,11 @@ public:
                                  const Upstream::ClusterInfo&, const VirtualCluster*,
                                  Runtime::Loader&, Random::RandomGenerator&, Event::Dispatcher&,
                                  Upstream::ResourcePriority) override {
-    EXPECT_EQ(nullptr, retry_state_);
-    retry_state_ = new NiceMock<MockRetryState>();
+    // in the normal router tests there is a new RouterTestFilter in every unit test, but since this
+    // is being run in a loop there may be more than one
+    if (retry_state_ == nullptr) {
+      retry_state_ = new NiceMock<MockRetryState>();
+    }
     if (reject_all_hosts_) {
       // Set up RetryState to always reject the host
       ON_CALL(*retry_state_, shouldSelectAnotherHost(_)).WillByDefault(Return(true));
@@ -385,8 +388,13 @@ public:
   };
 
   void replay(const test::common::router::RouterTestCase& input) {
+    ENVOY_LOG_MISC(info, "{}", input.DebugString());
+
     for (const auto& action : input.actions()) {
-      // set up the encoder/decoder and decode the headers
+      ENVOY_LOG_MISC(info, "{}", action);
+
+      // every request gets a new encoder/decoder/stream?
+      // getting a segfault when onPoolReady is called on the second iteration here
       NiceMock<Http::MockRequestEncoder> encoder1;
       Http::ResponseDecoder* response_decoder = nullptr;
       EXPECT_CALL(cm_.conn_pool_, newStream(_, _))
@@ -394,32 +402,36 @@ public:
               Invoke([&](Http::ResponseDecoder& decoder, Http::ConnectionPool::Callbacks& callbacks)
                          -> Http::ConnectionPool::Cancellable* {
                 response_decoder = &decoder;
+                // still not too sure what these callbacks are for / do
                 callbacks.onPoolReady(encoder1, cm_.conn_pool_.host_, upstream_stream_info_);
                 return nullptr;
               }));
+
+      // this creates the response timeout timer
       expectResponseTimerCreate();
-      expectPerTryTimerCreate();
+
       Http::TestRequestHeaderMapImpl headers{{"x-envoy-retry-on", "5xx"},
                                              {"x-envoy-internal", "true"},
-                                             {"x-envoy-upstream-rq-timeout-ms", "200"},
-                                             {"x-envoy-upstream-rq-per-try-timeout-ms", "100"}};
+                                             {"x-envoy-upstream-rq-timeout-ms", "200"}};
+      /* {"x-envoy-upstream-rq-per-try-timeout-ms", "100"}}; */
       HttpTestUtility::addDefaultHeaders(headers);
-      router_.decodeHeaders(headers, false);
-      Buffer::OwnedImpl data;
-      router_.decodeData(data, true);
+      router_.decodeHeaders(headers, true);
+      // that was all the set up code to get the router to send a request to the server, now we can
+      // perform interesting actions like getting the request to timeout so the router has to retry,
+      // etc.
 
       switch (action) {
       case test::common::router::RouterTestCase::RETRY: {
-        ENVOY_LOG_MISC(info, "retry");
 
-        // taken from https://github.com/envoyproxy/envoy/test/common/router/router_test.cc#L1007
+        // send a 5xx response so the router retries, since the retry-on header is present
         router_.retry_state_->expectHeadersRetry();
-        // send back a 503 error
         Http::ResponseHeaderMapPtr response_headers1(
             new Http::TestResponseHeaderMapImpl{{":status", "503"}});
+        // simulate receiving a 503 status from the server with the response decoder
         response_decoder->decodeHeaders(std::move(response_headers1), true);
 
-        // We expect the 5xx response to kick off a new request.
+        // the response should cause the router to make a new request
+        // not too sure why there's a new encoder
         NiceMock<Http::MockRequestEncoder> encoder2;
         EXPECT_CALL(cm_.conn_pool_, newStream(_, _))
             .WillOnce(Invoke(
@@ -431,23 +443,20 @@ public:
                 }));
         router_.retry_state_->callback_();
 
-        // Normal response.
+        // seems like this is hardcoding in that the router should not retry, since
+        // expectHeadersRetry() above sets the expectation that this returns RetryStatus::Yes, so is
+        // this actually testing that the router automatically retries?
         EXPECT_CALL(*router_.retry_state_, shouldRetryHeaders(_, _))
             .WillOnce(Return(RetryStatus::No));
         Http::ResponseHeaderMapPtr response_headers2(
             new Http::TestResponseHeaderMapImpl{{":status", "200"}});
+        // simulate a normal response from the server so the router should not retry now
         response_decoder->decodeHeaders(std::move(response_headers2), true);
         break;
       }
       case test::common::router::RouterTestCase::TIMEOUT: {
-        ENVOY_LOG_MISC(info, "timeout");
-
-        // taken from https://github.com/envoyproxy/envoy/test/common/router/router_test.cc#L1662
-        Http::ResponseHeaderMapPtr response_headers(
-            new Http::TestResponseHeaderMapImpl{{":status", "200"}});
-        response_decoder->decodeHeaders(std::move(response_headers), false);
-        test_time_.advanceTimeWait(std::chrono::milliseconds(201));
-        response_decoder->decodeData(data, true);
+        // this seems to cause an upstream timeout
+        response_timeout_->invokeCallback();
         break;
       }
       default:
@@ -466,7 +475,6 @@ DEFINE_PROTO_FUZZER(const test::common::router::RouterTestCase& input) {
   }
 
   RouterTest router_test{};
-
   router_test.replay(input);
 }
 
