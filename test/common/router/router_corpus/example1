@@ -1,0 +1,14 @@
+actions {
+  stream_action {
+    request {
+	  data: 5,
+	  end_stream: true
+	}
+  }
+}
+actions {
+  advance_time {}
+}
+actions {
+  force_retry {}
+}

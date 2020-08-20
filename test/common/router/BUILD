@@ -267,6 +267,15 @@ envoy_cc_test(
     name = "router_test",
     srcs = ["router_test.cc"],
     deps = [
+        ":router_lib",
+    ],
+)
+
+envoy_cc_test_library(
+    name = "router_lib",
+    srcs = ["router_lib.cc"],
+    hdrs = ["router_lib.h"],
+    deps = [
         "//source/common/buffer:buffer_lib",
         "//source/common/http:context_lib",
         "//source/common/network:application_protocol_lib",
@@ -302,6 +311,7 @@ envoy_cc_test(
     name = "router_upstream_log_test",
     srcs = ["router_upstream_log_test.cc"],
     external_deps = ["abseil_optional"],
+    tags = ["fails_on_windows"],
     deps = [
         "//source/common/buffer:buffer_lib",
         "//source/common/network:utility_lib",
@@ -375,5 +385,22 @@ envoy_cc_test(
     deps = [
         "//source/common/router:router_lib",
         "//test/mocks/router:router_filter_interface",
+    ],
+)
+
+envoy_proto_library(
+    name = "router_fuzz_proto",
+    srcs = ["router_fuzz.proto"],
+    deps = ["//test/fuzz:common_proto"],
+)
+
+envoy_cc_fuzz_test(
+    name = "router_fuzz_test",
+    srcs = ["router_fuzz_test.cc"],
+    corpus = "router_corpus",
+    deps = [
+        ":router_fuzz_proto_cc_proto",
+        ":router_lib",
+        "//test/fuzz:utility_lib",
     ],
 )
