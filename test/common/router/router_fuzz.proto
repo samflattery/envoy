@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package test.common.router;
+
+import "validate/validate.proto";
+
+message RouterTestCase {
+  enum Action {
+    RETRY = 0;
+    TIMEOUT = 1;
+  }
+  repeated Action actions = 1 [(validate.rules).repeated .items.enum.defined_only = true];
+}

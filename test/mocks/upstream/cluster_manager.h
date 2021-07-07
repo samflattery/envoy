@@ -15,6 +15,14 @@
 namespace Envoy {
 namespace Upstream {
 using ::testing::NiceMock;
+
+class MockConnPoolWithDestroy : public Http::ConnectionPool::MockInstance {
+public:
+  ~MockConnPoolWithDestroy() override { onDestroy(); }
+
+  MOCK_METHOD(void, onDestroy, ());
+};
+
 class MockClusterManager : public ClusterManager {
 public:
   explicit MockClusterManager(TimeSource& time_source);
@@ -65,7 +73,8 @@ public:
               (ClusterUpdateCallbacks & callbacks));
   MOCK_METHOD(Config::SubscriptionFactory&, subscriptionFactory, ());
 
-  NiceMock<Http::ConnectionPool::MockInstance> conn_pool_;
+  NiceMock<MockConnPoolWithDestroy> conn_pool_;
+  /* NiceMock<Http::ConnectionPool::MockInstance> conn_pool_; */
   NiceMock<Http::MockAsyncClient> async_client_;
   NiceMock<Tcp::ConnectionPool::MockInstance> tcp_conn_pool_;
   NiceMock<MockThreadLocalCluster> thread_local_cluster_;

@@ -389,6 +389,38 @@ public:
       : RouterTestBase(false, true, Protobuf::RepeatedPtrField<std::string>{}) {}
 };
 
+TEST_F(RouterTest, TimeoutCrash) {
+  Http::ResponseDecoder* response_decoder = nullptr;
+  NiceMock<Http::MockRequestEncoder> encoder;
+  EXPECT_CALL(cm_.conn_pool_, newStream(_, _))
+      .WillOnce(Invoke(
+          [&](Http::ResponseDecoder& decoder,
+              Http::ConnectionPool::Callbacks& callbacks) -> Http::ConnectionPool::Cancellable* {
+            response_decoder = &decoder;
+            callbacks.onPoolReady(encoder, cm_.conn_pool_.host_, upstream_stream_info_);
+            return nullptr;
+          }));
+  expectPerTryTimerCreate();
+  expectResponseTimerCreate();
+
+  Http::TestRequestHeaderMapImpl headers{{"x-envoy-upstream-rq-timeout-ms", "400"},
+                                         {"x-envoy-upstream-rq-per-try-timeout-ms", "200"}};
+  HttpTestUtility::addDefaultHeaders(headers);
+  router_.decodeHeaders(headers, false);
+
+  Buffer::OwnedImpl data;
+  router_.decodeData(data, true);
+
+  EXPECT_CALL(cm_.conn_pool_, onDestroy()).WillOnce(Invoke([&]() {
+    ENVOY_LOG_MISC(info, "reset stream");
+    encoder.stream_.resetStream(Http::StreamResetReason::RemoteReset);
+  }));
+  sleep(1);
+  Http::ResponseHeaderMapPtr response_headers(
+      new Http::TestResponseHeaderMapImpl{{":status", "200"}});
+  response_decoder->decodeHeaders(std::move(response_headers), true);
+}
+
 TEST_F(RouterTest, UpdateServerNameFilterState) {
   NiceMock<StreamInfo::MockStreamInfo> stream_info;
   auto dummy_option = absl::make_optional<envoy::config::core::v3::UpstreamHttpProtocolOptions>();

@@ -192,8 +192,11 @@ void UpstreamRequest::maybeEndDecode(bool end_stream) {
 void UpstreamRequest::onUpstreamHostSelected(Upstream::HostDescriptionConstSharedPtr host) {
   stream_info_.onUpstreamHostSelected(host);
   upstream_host_ = host;
+  ENVOY_LOG_MISC(info, "before deref callbacks");
   parent_.callbacks()->streamInfo().onUpstreamHostSelected(host);
+  ENVOY_LOG_MISC(info, "after deref callbacks");
   parent_.onUpstreamHostSelected(host);
+  ENVOY_LOG_MISC(info, "after parent");
 }
 
 void UpstreamRequest::encodeHeaders(bool end_stream) {
